@@ -26,15 +26,12 @@ impl RayIntersect for Cube {
         let t_min = t1.min(t2).max(t3.min(t4)).max(t5.min(t6));
         let t_max = t1.max(t2).min(t3.max(t4)).min(t5.max(t6));
 
-        // Check if the ray misses the cube
         if t_max < 0.0 || t_min > t_max {
             return Intersect::empty();
         }
 
-        // Calculate the intersection distance
         let distance = if t_min >= 0.0 { t_min } else { t_max };
 
-        // Compute intersection point and normal
         let hit_point = origin + ray_direction * distance;
         let normal = self.compute_normal(hit_point);
 

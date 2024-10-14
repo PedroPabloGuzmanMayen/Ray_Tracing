@@ -18,7 +18,7 @@ impl Camera {
     }
 
     pub fn basis_change(&self, vector: &Vec3) -> Vec3 {
-        let forward = (self.center - self.eye).normalize();
+        let forward = -(self.center - self.eye).normalize();
         let right = forward.cross(&self.up).normalize();
         let up = right.cross(&forward).normalize();
 

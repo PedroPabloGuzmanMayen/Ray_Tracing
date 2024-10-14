@@ -3,9 +3,9 @@ use std::ops::{Add, Mul};
 
 #[derive(Debug, Copy, Clone)]
 pub struct Color {
-    r: u8,
-    g: u8,
-    b: u8,
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
 }
 
 impl Color {
@@ -41,13 +41,13 @@ impl Add for Color {
     }
 }
 
-impl Mul<i32> for Color {
+impl Mul<f32> for Color {
     type Output = Color;
 
-    fn mul(self, factor: i32) -> Color {
-        let r = (self.r as i32 * factor).clamp(0, 255) as u8;
-        let g = (self.g as i32 * factor).clamp(0, 255) as u8;
-        let b = (self.b as i32 * factor).clamp(0, 255) as u8;
+    fn mul(self, factor: f32) -> Color {
+        let r = (self.r as f32 * factor).clamp(0.0, 255.0) as u8;
+        let g = (self.g as f32 * factor).clamp(0.0, 255.0) as u8;
+        let b = (self.b as f32 * factor).clamp(0.0, 255.0) as u8;
         Color { r, g, b }
     }
 }
