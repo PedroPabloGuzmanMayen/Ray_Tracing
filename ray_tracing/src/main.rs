@@ -42,17 +42,18 @@ pub fn cast_ray(ray_origin: &Vec3, ray_direction: &Vec3, objects: &[Cube], light
 
     let light_dir = (light.position - hit_point).normalize();
     let view_dir = (ray_origin - intersect.point).normalize();
+    let reflect_dir = reflect(&-light_dir, &intersect.normal).normalize();
     //println!("Light dir: {}", light_dir);
 
     //println!("Point normal: {}", intersect.normal);
 
     let diffuse_intensity = intersect.normal.dot(&light_dir);
-    let intensity = light.intensity;
-    let light_color = light.color;
+    let specular_intensity = view_dir.dot(&reflect_dir).max(0.0).powf(intersect.material.specular);
+    let specular = light.color*specular_intensity*light.intensity;
     //println!("Diffuse intensity: {}", diffuse_intensity);
 
-    let mut diffuse = intersect.material.diffuse * diffuse_intensity * intensity;
-    diffuse
+    let mut diffuse = intersect.material.diffuse * diffuse_intensity * light.intensity;
+    diffuse + specular
 }
 
 pub fn render(framebuffer: &mut FrameBuffer, objects: &[Cube], camera: &mut Camera, light: &Light) {
@@ -101,6 +102,7 @@ fn main() {
             max: Vec3::new(0.0, 0.0, 0.0),
             material: Material {
                 diffuse: Color::new(255, 0, 0),
+                specular: 50.0
             },
         },
 
@@ -109,6 +111,7 @@ fn main() {
             max: Vec3::new(5.0, 0.0, 0.0),
             material: Material {
                 diffuse: Color::new(0, 255, 0),
+                specular: 265.0
             },
             
         }
@@ -120,9 +123,9 @@ fn main() {
     let rotation_speed = PI/60.0;
 
     let light = Light::new(
-        Vec3::new(7.0,11.0,5.0),
+        Vec3::new(7.0,0.0,5.0),
         Color::new(255,255,255),
-        10.0
+        2.0
     );
 
     let mut window = Window::new(
