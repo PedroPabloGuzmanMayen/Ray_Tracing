@@ -49,10 +49,10 @@ pub fn cast_ray(ray_origin: &Vec3, ray_direction: &Vec3, objects: &[Cube], light
 
     let diffuse_intensity = intersect.normal.dot(&light_dir);
     let specular_intensity = view_dir.dot(&reflect_dir).max(0.0).powf(intersect.material.specular);
-    let specular = light.color*specular_intensity*light.intensity;
+    let specular = light.color*specular_intensity*light.intensity * intersect.material.albedo[1];
     //println!("Diffuse intensity: {}", diffuse_intensity);
 
-    let mut diffuse = intersect.material.diffuse * diffuse_intensity * light.intensity;
+    let mut diffuse = intersect.material.diffuse * diffuse_intensity * light.intensity * intersect.material.albedo[0];
     diffuse + specular
 }
 
@@ -102,7 +102,8 @@ fn main() {
             max: Vec3::new(0.0, 0.0, 0.0),
             material: Material {
                 diffuse: Color::new(255, 0, 0),
-                specular: 50.0
+                specular: 50.0,
+                albedo: [0.9, 0.1]
             },
         },
 
@@ -111,7 +112,8 @@ fn main() {
             max: Vec3::new(5.0, 0.0, 0.0),
             material: Material {
                 diffuse: Color::new(0, 255, 0),
-                specular: 265.0
+                specular: 265.0,
+                albedo: [0.1, 0.9]
             },
             
         }

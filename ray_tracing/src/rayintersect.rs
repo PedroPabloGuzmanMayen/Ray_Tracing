@@ -20,6 +20,7 @@ impl Intersect {
             distance,
             is_intersecting: true,
             material,
+
         }
     }
 
@@ -31,7 +32,8 @@ impl Intersect {
             is_intersecting: false,
             material: Material{
               diffuse: Color::new(0, 0, 0),
-              specular: 0.0
+              specular: 0.0,
+              albedo: [0.0, 0.0]
             },
         }
     }
