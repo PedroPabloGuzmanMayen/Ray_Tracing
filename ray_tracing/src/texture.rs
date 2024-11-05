@@ -28,4 +28,14 @@ impl Texture {
         Color::new(pixel[0], pixel[1], pixel[2])
         
     }
+
+    pub fn get_color(&self, u: f32, v: f32) -> Color {
+        let width = self.image.width();
+        let height = self.image.height();
+        let x = (u * width as f32).clamp(0.0, width as f32 - 1.0) as u32;
+        let y = (v * height as f32).clamp(0.0, height as f32 - 1.0) as u32;
+
+        let pixel = self.image.get_pixel(x, y);
+        Color::new(pixel[0], pixel[1], pixel[2])
+    }
 }

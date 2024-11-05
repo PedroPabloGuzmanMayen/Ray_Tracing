@@ -12,17 +12,73 @@ use cube::Cube;
 use material::Material;
 use light::Light;
 use framebuffer::FrameBuffer;
+use texture::Texture;
 use rayintersect::{RayIntersect, Intersect};
 use minifb::{Window, WindowOptions, Key};
 use nalgebra_glm::{Vec2, Vec3};
 use std::time::Duration;
 use color::Color;
+use once_cell::sync::Lazy;
+use std::sync::Arc;
+
+const EPSILON: f32 = 1e-4;
+const ZOOM:f32 = 0.5;
+const SKYBOX_COLOR: (usize, usize, usize) = (135, 206, 235);
+static STONE:Lazy<Arc<Texture>> = Lazy::new(|| Arc::new(Texture::new("assets/dirt.png")));
 
 fn reflect(incident: &Vec3, normal: &Vec3) -> Vec3 {
     incident - 2.0 * incident.dot(normal) * normal
 }
 
-pub fn cast_ray(ray_origin: &Vec3, ray_direction: &Vec3, objects: &[Cube], light: &Light) -> Color {
+fn refract(incident: &Vec3, normal: &Vec3, eta_t: f32) -> Vec3 {
+    let cosi = -incident.dot(normal).max(-1.0).min(1.0);
+    
+    let (n_cosi, eta, n_normal);
+
+    if cosi < 0.0 {
+        n_cosi = -cosi;
+        eta = 1.0 / eta_t;
+        n_normal = -normal;
+    } else {
+        n_cosi = cosi;
+        eta = eta_t;
+        n_normal = *normal;
+    }
+    let k = 1.0 - eta * eta * (1.0 - n_cosi * n_cosi);
+    
+    if k < 0.0 {
+        reflect(incident, &n_normal)
+    } else {
+        eta * incident + (eta * n_cosi - k.sqrt()) * n_normal
+    }
+}
+
+
+
+fn cast_shadow(
+    intersect: &Intersect,
+    light: &Light,
+    objects: &[Cube],
+) -> f32 {
+    let light_dir = (light.position - intersect.point).normalize();
+    let shadow_ray_origin = intersect.point + intersect.normal * EPSILON; // Offset to avoid acne
+    let mut shadow_intensity = 0.0;
+
+    for object in objects {
+        let shadow_intersect = object.ray_intersect(&shadow_ray_origin, &light_dir);
+        if shadow_intersect.is_intersecting {
+            shadow_intensity = 1.0;
+            break;
+        }
+    }
+
+    shadow_intensity
+}
+
+pub fn cast_ray(ray_origin: &Vec3, ray_direction: &Vec3, objects: &[Cube], lights: &[Light], depth:u32) -> Color {
+    if depth > 3 {
+        return Color::new(SKYBOX_COLOR.0 as u8, SKYBOX_COLOR.1 as u8, SKYBOX_COLOR.2 as u8);
+    }
     //println!("Casting ray from origin: {:?}, direction: {:?}", ray_origin, ray_direction);
     let mut intersect = Intersect::empty();
     let mut zbuffer = f32::INFINITY;
@@ -31,32 +87,65 @@ pub fn cast_ray(ray_origin: &Vec3, ray_direction: &Vec3, objects: &[Cube], light
         //println!("Intersect result: {:?}", i);
         if i.is_intersecting && i.distance < zbuffer {
             intersect = i;
-            zbuffer = i.distance;
+            zbuffer = intersect.distance;
         }
     }
     if !intersect.is_intersecting {
         //println!("No intersection. Returning background color.");
         return Color::new(4,12,36);
     }
-    let hit_point = intersect.point;
+    let mut final_color = Color::new(0, 0, 0); // Accumulate light contributions
+    for light in lights {
+        let light_dir = (light.position - intersect.point).normalize();
+        let view_dir = (ray_origin - intersect.point).normalize();
+        let reflect_dir = reflect(&-light_dir, &intersect.normal).normalize();
+        
 
-    let light_dir = (light.position - hit_point).normalize();
-    let view_dir = (ray_origin - intersect.point).normalize();
-    let reflect_dir = reflect(&-light_dir, &intersect.normal).normalize();
-    //println!("Light dir: {}", light_dir);
+        let diffuse_intensity = intersect.normal.dot(&light_dir).max(0.0);
+        let specular_intensity = view_dir
+            .dot(&reflect_dir)
+            .max(0.0)
+            .powf(intersect.material.specular);
 
-    //println!("Point normal: {}", intersect.normal);
+        let shadow = cast_shadow(&intersect, light, objects);
+        let diffuse = intersect.material.get_diffuse(intersect.u, intersect.v)
+            * diffuse_intensity
+            * light.intensity
+            * intersect.material.albedo[0]
+            * (1.0 - shadow);
 
-    let diffuse_intensity = intersect.normal.dot(&light_dir);
-    let specular_intensity = view_dir.dot(&reflect_dir).max(0.0).powf(intersect.material.specular);
-    let specular = light.color*specular_intensity*light.intensity * intersect.material.albedo[1];
-    //println!("Diffuse intensity: {}", diffuse_intensity);
+        let specular = light.color
+            * specular_intensity
+            * light.intensity
+            * intersect.material.albedo[1]
+            * (1.0 - shadow);
+        
+        
+        final_color = (final_color + diffuse + specular);
+    }
 
-    let mut diffuse = intersect.material.diffuse * diffuse_intensity * light.intensity * intersect.material.albedo[0];
-    diffuse + specular
+    let mut reflect_color = Color::new(0, 0, 0);
+    let reflectivity = intersect.material.albedo[2];
+    if reflectivity > 0.0 {
+        let reflect_dir = reflect(&-ray_direction, &intersect.normal).normalize();
+        let reflect_origin = intersect.point + intersect.normal * EPSILON;
+        reflect_color = cast_ray(&reflect_origin, &reflect_dir, objects, lights, depth +1);
+
+    }
+
+
+    let mut refract_color = Color::new(0,0,0);
+    let transparency = intersect.material.albedo[3];
+    if transparency > 0.0 {
+        let refract_dir = refract(&ray_direction, &intersect.normal, intersect.material.refractive_index);
+        let refract_origin = intersect.point - intersect.normal * EPSILON;
+        refract_color = cast_ray(&refract_origin, &refract_dir, objects, lights, depth +1);
+    }
+    final_color * (1.0-reflectivity-transparency) + (reflect_color * reflectivity) + (refract_color * transparency)
+    
 }
 
-pub fn render(framebuffer: &mut FrameBuffer, objects: &[Cube], camera: &mut Camera, light: &Light) {
+pub fn render(framebuffer: &mut FrameBuffer, objects: &Vec<Cube>, camera: &mut Camera, lights: &[Light]) {
     let width = framebuffer.width as f32;
     let height = framebuffer.height as f32;
     let aspect_ratio = width / height;
@@ -75,12 +164,52 @@ pub fn render(framebuffer: &mut FrameBuffer, objects: &[Cube], camera: &mut Came
             let ray_direction = &Vec3::new(screen_x, screen_y, -1.0).normalize();
             let rotated_direction = camera.basis_change(&ray_direction);
 
-            let pixel_color = cast_ray(&camera.eye, &rotated_direction, objects, light);
+            let pixel_color = cast_ray(&camera.eye, &rotated_direction, objects, lights, 0);
             framebuffer.set_current_color(pixel_color);
             framebuffer.point(x, y);
         }
     }
     //println!("Finished rendering.");
+}
+
+//mode: se refiera a si queremos crear la cuadrícula sobre los ejex xy o yz
+//grid_size: se refiera al tamaño que se quiere para la cuadrícula
+pub fn create_grid(initial_min_position: &mut Vec3, initial_max_position: &mut Vec3, cube_length: f32, mode:usize, grid_size: usize, material:Material ) -> Vec<Cube>{
+    let mut material_grid: Vec<Cube> = Vec::new();
+    let mut current_min = *initial_min_position; // Dereference to get the actual value
+    let mut current_max = *initial_max_position;
+    let vertical_sum_vector = match mode {
+        1 => Vec3::new(cube_length, 0.0, 0.0), //Cuando queremos usar la cuadrícula en xy
+        2 => Vec3::new(cube_length, 0.0, 0.0),
+        _ => Vec3::new(0.0, 0.0, 0.0) //Caso base
+    };
+
+    let horizontal_sum_vector = match mode {
+        1 => Vec3::new(0.0, cube_length, 0.0), //Cuando queremos usar la cuadrícula en xy
+        2 => Vec3::new(0.0, 0.0, cube_length),
+        _ => Vec3::new(0.0, 0.0, 0.0) //Caso base
+    };
+
+    for i in 0..grid_size + 1 {
+
+        for j in 0..grid_size +1 {
+            material_grid.push(Cube { min: current_min, 
+                max:current_max, 
+                material: material.clone()});
+
+            current_max += vertical_sum_vector;
+            current_min += vertical_sum_vector;
+        }
+        *initial_min_position -= horizontal_sum_vector;
+        *initial_max_position -= horizontal_sum_vector;
+        current_min = *initial_min_position;
+        current_max = * initial_max_position;
+        
+
+
+    }
+
+    material_grid
 }
 fn main() {
     let window_height = 600;
@@ -89,21 +218,30 @@ fn main() {
     let framebuffer_height = 600;
     let framebuffer_width = 800;
 
+
+    let mut test = Material::material_with_texture(Color::new(128,128,128), 2.0, [0.5, 0.5, 0.0, 0.0], Some(STONE.clone()), 1.0);
+    let mut test2 = Material::material_with_texture(Color::new(128,128,128), 9.0, [0.9, 0.5, 0.0, 0.0], Some(STONE.clone()), 1.0);
     let frame_delay = Duration::from_millis(0);
     let mut camera = Camera::new(
         Vec3::new(-5.0, 5.0, -5.0), // Move the camera backward
-        Vec3::new(-0.5, -0.5, -1.0),
+        Vec3::new(0.0, 0.0, 0.0), //original: -0.5, -0.5, -1.0
         Vec3::new(0.0, 1.0, 0.0),
+        false
     );
+    let test_world = create_grid(&mut Vec3::new(-0.5, -0.5, -0.5),
+    &mut Vec3::new(0.5, 0.5, 0.5),
+      1.0, 2, 10, test);
     
-    let objects = [
+    let objects = vec![
         Cube {
-            min: Vec3::new(-0.5, -0.5, -1.0), // Move the cube forward
-            max: Vec3::new(0.0, 0.0, 0.0),
+            min: Vec3::new(-0.5, -0.5, -0.5), 
+            max: Vec3::new(0.5, 0.5, 0.5),
             material: Material {
                 diffuse: Color::new(255, 0, 0),
                 specular: 50.0,
-                albedo: [0.9, 0.1]
+                albedo: [0.9, 0.1, 0.0, 0.0],
+                texture: None,
+                refractive_index: 1.0
             },
         },
 
@@ -113,9 +251,37 @@ fn main() {
             material: Material {
                 diffuse: Color::new(0, 255, 0),
                 specular: 265.0,
-                albedo: [0.1, 0.9]
+                albedo: [0.1, 0.9, 0.8, 0.5],
+                texture: None,
+                refractive_index: 1.0
             },
             
+        },
+
+        Cube {
+            min: Vec3::new(6.0, -0.5, -1.0), 
+            max: Vec3::new(8.0, 0.5, 0.0),
+            material: Material {
+                diffuse: Color::new(255, 255, 0),
+                specular: 9.0,
+                albedo: [0.1, 0.9, 0.3, 0.4],
+                texture:None,
+                refractive_index: 1.0
+            },
+            
+        },
+        Cube {
+
+            min: Vec3::new(3.0, 2.0, -5.0), // Move the cube forward
+            max: Vec3::new(5.0, 4.0, -3.0),
+            material: Material {
+                diffuse: Color::new(254, 138, 24),
+                specular: 265.0,
+                albedo: [0.1, 0.9, 0.4, 0.5],
+                texture: None,
+                refractive_index: 1.0
+            },
+
         }
     ];
 
@@ -124,12 +290,12 @@ fn main() {
 
     let rotation_speed = PI/60.0;
 
-    let light = Light::new(
-        Vec3::new(7.0,0.0,5.0),
-        Color::new(255,255,255),
-        2.0
-    );
-
+    let lights = [
+        Light::new(Vec3::new(7.0, 5.0, 5.0), Color::new(255, 255, 255), 10.0),
+        Light::new(Vec3::new(3.0, 45.0, 6.0), Color::new(255, 255, 255), 10.0),
+        Light::new(Vec3::new(-3.0, 5.0, 5.0), Color::new(255, 255, 255), 10.0),
+    ];
+    render(&mut framebuffer, &objects, &mut camera, &lights);
     let mut window = Window::new(
         "Minecraft RayTracer",
         window_width,
@@ -153,9 +319,17 @@ fn main() {
         if window.is_key_down(Key::Down){
             camera.orbit(0.0, rotation_speed);
         }
-        framebuffer.clear();
-        render(&mut framebuffer, &objects, &mut camera, &light);
-
+        if window.is_key_down(Key::W){
+            camera.zoom(ZOOM);
+        }
+        if window.is_key_down(Key::S){
+            camera.zoom(-ZOOM);
+        }
+        if camera.has_changed {
+            //framebuffer.clear();
+            render(&mut framebuffer, &objects, &mut camera, &lights);
+        }
+        
 
         window
             .update_with_buffer(&framebuffer.cast_buffer(), framebuffer_width, framebuffer_height)
