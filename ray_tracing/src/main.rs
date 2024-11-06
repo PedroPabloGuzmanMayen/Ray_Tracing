@@ -23,7 +23,8 @@ use std::sync::Arc;
 
 const EPSILON: f32 = 1e-4;
 const ZOOM:f32 = 0.5;
-const SKYBOX_COLOR: (usize, usize, usize) = (135, 206, 235);
+const SKYBOX_COLOR_NIGHT: (usize, usize, usize) = (4,12,36);
+const SKYBOX_COLOR_DAY: (usize, usize, usize) = (135, 206, 235);
 static STONE:Lazy<Arc<Texture>> = Lazy::new(|| Arc::new(Texture::new("assets/dirt.png")));
 
 fn reflect(incident: &Vec3, normal: &Vec3) -> Vec3 {
@@ -75,9 +76,9 @@ fn cast_shadow(
     shadow_intensity
 }
 
-pub fn cast_ray(ray_origin: &Vec3, ray_direction: &Vec3, objects: &[Cube], lights: &[Light], depth:u32) -> Color {
+pub fn cast_ray(ray_origin: &Vec3, ray_direction: &Vec3, objects: &[Cube], lights: &[Light], depth:u32, is_day: bool) -> Color {
     if depth > 3 {
-        return Color::new(SKYBOX_COLOR.0 as u8, SKYBOX_COLOR.1 as u8, SKYBOX_COLOR.2 as u8);
+        return if is_day {Color::new(SKYBOX_COLOR_DAY.0 as u8, SKYBOX_COLOR_DAY.1 as u8, SKYBOX_COLOR_DAY.2 as u8)} else {Color::new(SKYBOX_COLOR_NIGHT.0 as u8, SKYBOX_COLOR_NIGHT.1 as u8, SKYBOX_COLOR_NIGHT.2 as u8)};
     }
     //println!("Casting ray from origin: {:?}, direction: {:?}", ray_origin, ray_direction);
     let mut intersect = Intersect::empty();
@@ -92,7 +93,7 @@ pub fn cast_ray(ray_origin: &Vec3, ray_direction: &Vec3, objects: &[Cube], light
     }
     if !intersect.is_intersecting {
         //println!("No intersection. Returning background color.");
-        return Color::new(4,12,36);
+        return if is_day {Color::new(SKYBOX_COLOR_DAY.0 as u8, SKYBOX_COLOR_DAY.1 as u8, SKYBOX_COLOR_DAY.2 as u8)} else {Color::new(SKYBOX_COLOR_NIGHT.0 as u8, SKYBOX_COLOR_NIGHT.1 as u8, SKYBOX_COLOR_NIGHT.2 as u8)};
     }
     let mut final_color = Color::new(0, 0, 0); // Accumulate light contributions
     for light in lights {
@@ -129,7 +130,7 @@ pub fn cast_ray(ray_origin: &Vec3, ray_direction: &Vec3, objects: &[Cube], light
     if reflectivity > 0.0 {
         let reflect_dir = reflect(&-ray_direction, &intersect.normal).normalize();
         let reflect_origin = intersect.point + intersect.normal * EPSILON;
-        reflect_color = cast_ray(&reflect_origin, &reflect_dir, objects, lights, depth +1);
+        reflect_color = cast_ray(&reflect_origin, &reflect_dir, objects, lights, depth +1, is_day);
 
     }
 
@@ -139,13 +140,13 @@ pub fn cast_ray(ray_origin: &Vec3, ray_direction: &Vec3, objects: &[Cube], light
     if transparency > 0.0 {
         let refract_dir = refract(&ray_direction, &intersect.normal, intersect.material.refractive_index);
         let refract_origin = intersect.point - intersect.normal * EPSILON;
-        refract_color = cast_ray(&refract_origin, &refract_dir, objects, lights, depth +1);
+        refract_color = cast_ray(&refract_origin, &refract_dir, objects, lights, depth +1, is_day);
     }
     final_color * (1.0-reflectivity-transparency) + (reflect_color * reflectivity) + (refract_color * transparency)
     
 }
 
-pub fn render(framebuffer: &mut FrameBuffer, objects: &Vec<Cube>, camera: &mut Camera, lights: &[Light]) {
+pub fn render(framebuffer: &mut FrameBuffer, objects: &Vec<Cube>, camera: &mut Camera, lights: &[Light], is_day:bool) {
     let width = framebuffer.width as f32;
     let height = framebuffer.height as f32;
     let aspect_ratio = width / height;
@@ -164,7 +165,7 @@ pub fn render(framebuffer: &mut FrameBuffer, objects: &Vec<Cube>, camera: &mut C
             let ray_direction = &Vec3::new(screen_x, screen_y, -1.0).normalize();
             let rotated_direction = camera.basis_change(&ray_direction);
 
-            let pixel_color = cast_ray(&camera.eye, &rotated_direction, objects, lights, 0);
+            let pixel_color = cast_ray(&camera.eye, &rotated_direction, objects, lights, 0, is_day);
             framebuffer.set_current_color(pixel_color);
             framebuffer.point(x, y);
         }
@@ -222,6 +223,7 @@ fn main() {
     let mut test = Material::material_with_texture(Color::new(128,128,128), 2.0, [0.5, 0.5, 0.0, 0.0], Some(STONE.clone()), 1.0);
     let mut test2 = Material::material_with_texture(Color::new(128,128,128), 9.0, [0.9, 0.5, 0.0, 0.0], Some(STONE.clone()), 1.0);
     let frame_delay = Duration::from_millis(0);
+    let mut is_day = true;
     let mut camera = Camera::new(
         Vec3::new(-5.0, 5.0, -5.0), // Move the camera backward
         Vec3::new(0.0, 0.0, 0.0), //original: -0.5, -0.5, -1.0
@@ -295,7 +297,7 @@ fn main() {
         Light::new(Vec3::new(3.0, 45.0, 6.0), Color::new(255, 255, 255), 10.0),
         Light::new(Vec3::new(-3.0, 5.0, 5.0), Color::new(255, 255, 255), 10.0),
     ];
-    render(&mut framebuffer, &objects, &mut camera, &lights);
+    render(&mut framebuffer, &objects, &mut camera, &lights, is_day);
     let mut window = Window::new(
         "Minecraft RayTracer",
         window_width,
@@ -325,9 +327,13 @@ fn main() {
         if window.is_key_down(Key::S){
             camera.zoom(-ZOOM);
         }
+        if window.is_key_down(Key::N){
+            is_day = !is_day;
+            camera.has_changed = true;
+        }
+
         if camera.has_changed {
-            //framebuffer.clear();
-            render(&mut framebuffer, &objects, &mut camera, &lights);
+            render(&mut framebuffer, &objects, &mut camera, &lights, is_day);
         }
         
 
