@@ -39,7 +39,9 @@ impl Intersect {
               specular: 0.0,
               albedo: [0.0, 0.0, 0.0, 0.0],
               texture:None,
-              refractive_index: 0.0
+              refractive_index: 0.0,
+            emission: Color::new(0, 0, 0),
+            emission_strength: 0.0
             },
             u: 0.0,
             v: 0.0

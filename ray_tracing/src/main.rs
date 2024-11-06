@@ -95,7 +95,7 @@ pub fn cast_ray(ray_origin: &Vec3, ray_direction: &Vec3, objects: &[Cube], light
         //println!("No intersection. Returning background color.");
         return if is_day {Color::new(SKYBOX_COLOR_DAY.0 as u8, SKYBOX_COLOR_DAY.1 as u8, SKYBOX_COLOR_DAY.2 as u8)} else {Color::new(SKYBOX_COLOR_NIGHT.0 as u8, SKYBOX_COLOR_NIGHT.1 as u8, SKYBOX_COLOR_NIGHT.2 as u8)};
     }
-    let mut final_color = Color::new(0, 0, 0); // Accumulate light contributions
+    let mut final_color = intersect.material.emission * intersect.material.emission_strength; // Accumulate light contributions
     for light in lights {
         let light_dir = (light.position - intersect.point).normalize();
         let view_dir = (ray_origin - intersect.point).normalize();
@@ -220,8 +220,8 @@ fn main() {
     let framebuffer_width = 800;
 
 
-    let mut test = Material::material_with_texture(Color::new(128,128,128), 2.0, [0.5, 0.5, 0.0, 0.0], Some(STONE.clone()), 1.0);
-    let mut test2 = Material::material_with_texture(Color::new(128,128,128), 9.0, [0.9, 0.5, 0.0, 0.0], Some(STONE.clone()), 1.0);
+    let mut test = Material::material_with_texture(Color::new(128,128,128), 2.0, [0.5, 0.5, 0.0, 0.0], Some(STONE.clone()), 1.0, Color::new(0,0,0), 0.0);
+    let mut test2 = Material::material_with_texture(Color::new(128,128,128), 9.0, [0.9, 0.5, 0.0, 0.0], Some(STONE.clone()), 1.0, Color::new(0,0,0), 0.0);
     let frame_delay = Duration::from_millis(0);
     let mut is_day = true;
     let mut camera = Camera::new(
@@ -243,7 +243,9 @@ fn main() {
                 specular: 50.0,
                 albedo: [0.9, 0.1, 0.0, 0.0],
                 texture: None,
-                refractive_index: 1.0
+                refractive_index: 1.0,
+                emission: Color::new(255, 0, 0),
+                emission_strength: 2.0
             },
         },
 
@@ -255,7 +257,9 @@ fn main() {
                 specular: 265.0,
                 albedo: [0.1, 0.9, 0.8, 0.5],
                 texture: None,
-                refractive_index: 1.0
+                refractive_index: 1.0,
+                emission: Color::new(0, 0, 0),
+                emission_strength: 0.0
             },
             
         },
@@ -268,7 +272,9 @@ fn main() {
                 specular: 9.0,
                 albedo: [0.1, 0.9, 0.3, 0.4],
                 texture:None,
-                refractive_index: 1.0
+                refractive_index: 1.0,
+                emission: Color::new(0, 0, 0),
+                emission_strength: 0.0
             },
             
         },
@@ -281,7 +287,9 @@ fn main() {
                 specular: 265.0,
                 albedo: [0.1, 0.9, 0.4, 0.5],
                 texture: None,
-                refractive_index: 1.0
+                refractive_index: 1.0,
+                emission: Color::new(0, 0, 0),
+                emission_strength: 0.0
             },
 
         }

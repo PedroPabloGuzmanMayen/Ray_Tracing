@@ -9,7 +9,9 @@ pub struct Material {
   pub specular: f32,
   pub albedo: [f32;4],
   pub texture: Option<Arc<Texture>>,
-  pub refractive_index: f32
+  pub refractive_index: f32,
+  pub emission: Color,           // New: emission color
+  pub emission_strength: f32
 }
 
 impl Material {
@@ -17,14 +19,18 @@ impl Material {
     diffuse: Color,
     specular: f32,
     albedo: [f32; 4],
-    refractive_index: f32
+    refractive_index: f32,
+    emission: Color,           // New: emission color
+    emission_strength: f32
   ) -> Self {
     Material {
       diffuse,
       specular,
       albedo,
       texture:None,
-      refractive_index
+      refractive_index,
+      emission,
+      emission_strength
     }
   }
 
@@ -33,13 +39,17 @@ impl Material {
     specular: f32,
     albedo: [f32; 4],
     texture: Option<Arc<Texture>>,
-  refractive_index: f32 ) -> Self {
+    refractive_index: f32,
+    emission: Color,           // New: emission color
+    emission_strength: f32 ) -> Self {
       Material {
         diffuse,
         specular,
         albedo,
         texture,
-        refractive_index
+        refractive_index,
+        emission,
+        emission_strength
       }
     }
 
@@ -61,7 +71,9 @@ impl Material {
       specular: 0.0,
       albedo: [0.0, 0.0, 0.0, 0.0],
       texture: None,
-      refractive_index: 0.0
+      refractive_index: 0.0,
+      emission: Color::new(0, 0, 0),
+      emission_strength: 0.0
     }
   }
 }
