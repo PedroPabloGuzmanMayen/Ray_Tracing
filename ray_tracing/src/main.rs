@@ -20,6 +20,7 @@ use std::time::Duration;
 use color::Color;
 use once_cell::sync::Lazy;
 use std::sync::Arc;
+use rayon::prelude::*;
 
 const EPSILON: f32 = 1e-4;
 const ZOOM:f32 = 0.5;
@@ -95,7 +96,10 @@ pub fn cast_ray(ray_origin: &Vec3, ray_direction: &Vec3, objects: &[Cube], light
         //println!("No intersection. Returning background color.");
         return if is_day {Color::new(SKYBOX_COLOR_DAY.0 as u8, SKYBOX_COLOR_DAY.1 as u8, SKYBOX_COLOR_DAY.2 as u8)} else {Color::new(SKYBOX_COLOR_NIGHT.0 as u8, SKYBOX_COLOR_NIGHT.1 as u8, SKYBOX_COLOR_NIGHT.2 as u8)};
     }
-    let mut final_color = intersect.material.emission * intersect.material.emission_strength; // Accumulate light contributions
+    let ambient_light_factor = if is_day { 5.0 } else { 0.05 };  
+    let ambient_light = intersect.material.albedo[0] * ambient_light_factor;
+    let mut final_color = intersect.material.emission * intersect.material.emission_strength; 
+    final_color = final_color + Color::new(ambient_light as u8, ambient_light as u8, ambient_light as u8); 
     for light in lights {
         let light_dir = (light.position - intersect.point).normalize();
         let view_dir = (ray_origin - intersect.point).normalize();
@@ -173,6 +177,51 @@ pub fn render(framebuffer: &mut FrameBuffer, objects: &Vec<Cube>, camera: &mut C
     //println!("Finished rendering.");
 }
 
+
+pub fn render_parallel(
+    framebuffer: &mut FrameBuffer,
+    objects: &[Cube],
+    camera: &Camera,
+    lights: &[Light],
+    is_day: bool,
+) {
+    let width = framebuffer.width;
+    let height = framebuffer.height;
+    let aspect_ratio = width as f32 / height as f32;
+    let fov = PI / 3.0;
+    let perspective_scale = (fov / 2.0).tan();
+
+    // Create a buffer to store colors computed in parallel
+    let colors: Vec<Color> = (0..width * height)
+        .into_par_iter()
+        .map(|i| {
+            let x = i % width;
+            let y = i / width;
+
+            let screen_x = (2.0 * x as f32) / width as f32 - 1.0;
+            let screen_y = -(2.0 * y as f32) / height as f32 + 1.0;
+            let screen_x = screen_x * aspect_ratio * perspective_scale;
+            let screen_y = screen_y * perspective_scale;
+
+            let ray_direction = Vec3::new(screen_x, screen_y, -1.0).normalize();
+            let rotated_direction = camera.basis_change(&ray_direction);
+
+            // Cast the ray and get the color for the current pixel
+            cast_ray(&camera.eye, &rotated_direction, objects, lights, 0, is_day)
+        })
+        .collect();
+
+    // Write colors to framebuffer
+    for (i, color) in colors.into_iter().enumerate() {
+        let x = i % width;
+        let y = i / width;
+        framebuffer.set_current_color(color);
+        framebuffer.point(x, y);
+    }
+}
+
+
+
 //mode: se refiera a si queremos crear la cuadrícula sobre los ejex xy o yz
 //grid_size: se refiera al tamaño que se quiere para la cuadrícula
 pub fn create_grid(initial_min_position: &mut Vec3, initial_max_position: &mut Vec3, cube_length: f32, mode:usize, grid_size: usize, material:Material ) -> Vec<Cube>{
@@ -212,6 +261,11 @@ pub fn create_grid(initial_min_position: &mut Vec3, initial_max_position: &mut V
 
     material_grid
 }
+
+
+
+// Function to parallelize the initial ray casting for each pixel
+
 fn main() {
     let window_height = 600;
     let window_width = 800;
@@ -301,11 +355,11 @@ fn main() {
     let rotation_speed = PI/60.0;
 
     let lights = [
-        Light::new(Vec3::new(7.0, 5.0, 5.0), Color::new(255, 255, 255), 10.0),
-        Light::new(Vec3::new(3.0, 45.0, 6.0), Color::new(255, 255, 255), 10.0),
-        Light::new(Vec3::new(-3.0, 5.0, 5.0), Color::new(255, 255, 255), 10.0),
+        Light::new(Vec3::new(7.0, 5.0, 5.0), Color::new(255, 255, 255), 1.0),
+        //Light::new(Vec3::new(7.0, 45.0, 6.0), Color::new(255, 255, 255), 10.0),
+        //Light::new(Vec3::new(-3.0, 5.0, 5.0), Color::new(255, 255, 255), 10.0),
     ];
-    render(&mut framebuffer, &objects, &mut camera, &lights, is_day);
+    render_parallel(&mut framebuffer, &test_world, &mut camera, &lights, is_day);
     let mut window = Window::new(
         "Minecraft RayTracer",
         window_width,
@@ -341,7 +395,7 @@ fn main() {
         }
 
         if camera.has_changed {
-            render(&mut framebuffer, &objects, &mut camera, &lights, is_day);
+            render_parallel(&mut framebuffer, &test_world, &mut camera, &lights, is_day);
         }
         
 
