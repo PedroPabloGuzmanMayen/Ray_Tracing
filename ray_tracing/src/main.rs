@@ -27,6 +27,7 @@ const ZOOM:f32 = 0.5;
 const SKYBOX_COLOR_NIGHT: (usize, usize, usize) = (4,12,36);
 const SKYBOX_COLOR_DAY: (usize, usize, usize) = (135, 206, 235);
 static STONE:Lazy<Arc<Texture>> = Lazy::new(|| Arc::new(Texture::new("assets/dirt.png")));
+static PYRAMID:Lazy<Arc<Texture>> = Lazy::new(|| Arc::new(Texture::new("assets/pyrstone.png")));
 
 fn reflect(incident: &Vec3, normal: &Vec3) -> Vec3 {
     incident - 2.0 * incident.dot(normal) * normal
@@ -126,7 +127,7 @@ pub fn cast_ray(ray_origin: &Vec3, ray_direction: &Vec3, objects: &[Cube], light
             * (1.0 - shadow);
         
         
-        final_color = (final_color + diffuse + specular);
+        final_color = final_color + diffuse + specular;
     }
 
     let mut reflect_color = Color::new(0, 0, 0);
@@ -262,6 +263,53 @@ pub fn create_grid(initial_min_position: &mut Vec3, initial_max_position: &mut V
     material_grid
 }
 
+pub fn create_pyramid(
+    base_min_position: Vec3,
+    base_max_position: Vec3,
+    cube_length: f32,
+    base_grid_size: usize,
+    material: Material,
+) -> Vec<Cube> {
+    let mut pyramid = Vec::new();
+    let mut layer_min = base_min_position;
+    let mut layer_max = base_max_position;
+    let mut grid_size = base_grid_size;
+
+    // Define vertical offset to raise each layer above the one below it
+    let layer_height_offset = Vec3::new(0.0, cube_length, 0.0); // Adjust if needed for Z-axis
+
+    for layer in 0..=base_grid_size {
+        // Create the current layer using the grid function
+        let mut layer_cubes = create_grid(
+            &mut layer_min,
+            &mut layer_max,
+            cube_length,
+            2,                // Choose mode depending on your 3D layout
+            grid_size,
+            material.clone(),
+        );
+
+        // Add this layer's cubes to the pyramid vector
+        pyramid.append(&mut layer_cubes);
+
+        // Reduce grid size for the next layer
+        if grid_size > 0 {
+            grid_size -= 1;
+        }
+
+        // Center next layer above by moving min and max positions inward
+        layer_min += Vec3::new(cube_length / 2.0, 0.0, cube_length / 2.0);
+        layer_max -= Vec3::new(cube_length / 2.0, 0.0, cube_length / 2.0);
+
+        // Raise the layer position for the next iteration
+        layer_min += layer_height_offset;
+        layer_max += layer_height_offset;
+    }
+
+    pyramid
+}
+
+
 
 
 // Function to parallelize the initial ray casting for each pixel
@@ -274,8 +322,8 @@ fn main() {
     let framebuffer_width = 800;
 
 
-    let mut test = Material::material_with_texture(Color::new(128,128,128), 2.0, [0.5, 0.5, 0.0, 0.0], Some(STONE.clone()), 1.0, Color::new(0,0,0), 0.0);
-    let mut test2 = Material::material_with_texture(Color::new(128,128,128), 9.0, [0.9, 0.5, 0.0, 0.0], Some(STONE.clone()), 1.0, Color::new(0,0,0), 0.0);
+    let mut DIRT = Material::material_with_texture(Color::new(128,128,128), 2.0, [0.9, 0.1, 0.0, 0.0], Some(STONE.clone()), 1.0, Color::new(0,0,0), 0.0);
+    let mut STONEP = Material::material_with_texture(Color::new(128,128,128), 2.0, [0.9, 0.1, 0.0, 0.0], Some(PYRAMID.clone()), 1.0, Color::new(0,0,0), 0.0);
     let frame_delay = Duration::from_millis(0);
     let mut is_day = true;
     let mut camera = Camera::new(
@@ -284,10 +332,29 @@ fn main() {
         Vec3::new(0.0, 1.0, 0.0),
         false
     );
-    let test_world = create_grid(&mut Vec3::new(-0.5, -0.5, -0.5),
-    &mut Vec3::new(0.5, 0.5, 0.5),
-      1.0, 2, 10, test);
     
+    let mut test_world = create_grid(&mut Vec3::new(-0.5, -0.5, -0.5),
+    &mut Vec3::new(0.5, 0.5, 0.5),
+      1.0, 2, 15, DIRT);
+
+
+    let test_world2 = create_grid(&mut Vec3::new(0.5, 0.5, -1.5),
+&mut Vec3::new(1.5, 1.5, -0.5), 1.0, 2, 8, STONEP.clone());
+
+    let test_world3 = create_grid(&mut Vec3::new(1.5, 1.5, -2.5),
+    &mut Vec3::new(2.5, 2.5, -1.5), 1.0, 2, 6, STONEP.clone());
+
+    let test_world4 = create_grid(&mut Vec3::new(2.5, 2.5, -3.5),
+    &mut Vec3::new(3.5, 3.5, -2.5), 1.0, 2, 4, STONEP.clone());
+
+    let test_world5 =create_grid(&mut Vec3::new(3.5, 3.5, -4.5),
+    &mut Vec3::new(4.5, 4.5, -3.5), 1.0, 2, 2, STONEP.clone());
+    
+
+    test_world.extend(test_world2);
+    test_world.extend(test_world3);
+    test_world.extend(test_world4);
+    test_world.extend(test_world5);
     let objects = vec![
         Cube {
             min: Vec3::new(-0.5, -0.5, -0.5), 
@@ -356,7 +423,7 @@ fn main() {
 
     let lights = [
         Light::new(Vec3::new(7.0, 5.0, 5.0), Color::new(255, 255, 255), 1.0),
-        //Light::new(Vec3::new(7.0, 45.0, 6.0), Color::new(255, 255, 255), 10.0),
+        Light::new(Vec3::new(7.0, 45.0, 6.0), Color::new(255, 255, 255), 1.0),
         //Light::new(Vec3::new(-3.0, 5.0, 5.0), Color::new(255, 255, 255), 10.0),
     ];
     render_parallel(&mut framebuffer, &test_world, &mut camera, &lights, is_day);
@@ -392,6 +459,10 @@ fn main() {
         if window.is_key_down(Key::N){
             is_day = !is_day;
             camera.has_changed = true;
+        }
+
+        if window.is_key_down(Key::D){
+            camera.move_center(Vec3::new(1.1, 1.0, 1.0));
         }
 
         if camera.has_changed {
