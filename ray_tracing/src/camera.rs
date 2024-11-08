@@ -52,6 +52,8 @@ impl Camera {
 
     }
 
+    //Camara zoom (5 puntos)
+
     pub fn zoom(&mut self, delta_zoom:f32){
         let direction = (self.center - self.eye).normalize();
         self.eye += direction * delta_zoom;

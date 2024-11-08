@@ -24,10 +24,14 @@ use rayon::prelude::*;
 
 const EPSILON: f32 = 1e-4;
 const ZOOM:f32 = 0.5;
+//Skybox (15 puntos)
 const SKYBOX_COLOR_NIGHT: (usize, usize, usize) = (4,12,36);
 const SKYBOX_COLOR_DAY: (usize, usize, usize) = (135, 206, 235);
 static STONE:Lazy<Arc<Texture>> = Lazy::new(|| Arc::new(Texture::new("assets/dirt.png")));
 static PYRAMID:Lazy<Arc<Texture>> = Lazy::new(|| Arc::new(Texture::new("assets/pyrstone.png")));
+static EMERALD:Lazy<Arc<Texture>> = Lazy::new(|| Arc::new(Texture::new("assets/emerald.png")));
+static WATER_TEXTURE:Lazy<Arc<Texture>> = Lazy::new(|| Arc::new(Texture::new("assets/water.png")));
+static RED_STONE_TEXTURE:Lazy<Arc<Texture>> = Lazy::new(|| Arc::new(Texture::new("assets/red.png")));
 
 fn reflect(incident: &Vec3, normal: &Vec3) -> Vec3 {
     incident - 2.0 * incident.dot(normal) * normal
@@ -97,10 +101,11 @@ pub fn cast_ray(ray_origin: &Vec3, ray_direction: &Vec3, objects: &[Cube], light
         //println!("No intersection. Returning background color.");
         return if is_day {Color::new(SKYBOX_COLOR_DAY.0 as u8, SKYBOX_COLOR_DAY.1 as u8, SKYBOX_COLOR_DAY.2 as u8)} else {Color::new(SKYBOX_COLOR_NIGHT.0 as u8, SKYBOX_COLOR_NIGHT.1 as u8, SKYBOX_COLOR_NIGHT.2 as u8)};
     }
-    let ambient_light_factor = if is_day { 5.0 } else { 0.05 };  
+    let ambient_light_factor = if is_day { 5.0 } else { 0.05 };  //Ciclo de dia y noche (10 puntos)
     let ambient_light = intersect.material.albedo[0] * ambient_light_factor;
     let mut final_color = intersect.material.emission * intersect.material.emission_strength; 
     final_color = final_color + Color::new(ambient_light as u8, ambient_light as u8, ambient_light as u8); 
+    //Soporte para diferentes luces (10 puntos)
     for light in lights {
         let light_dir = (light.position - intersect.point).normalize();
         let view_dir = (ray_origin - intersect.point).normalize();
@@ -263,50 +268,53 @@ pub fn create_grid(initial_min_position: &mut Vec3, initial_max_position: &mut V
     material_grid
 }
 
-pub fn create_pyramid(
-    base_min_position: Vec3,
-    base_max_position: Vec3,
+pub fn create_empty_grid(
+    initial_min_position: &mut Vec3,
+    initial_max_position: &mut Vec3,
     cube_length: f32,
-    base_grid_size: usize,
+    mode: usize,
+    grid_size: usize,
     material: Material,
 ) -> Vec<Cube> {
-    let mut pyramid = Vec::new();
-    let mut layer_min = base_min_position;
-    let mut layer_max = base_max_position;
-    let mut grid_size = base_grid_size;
+    let mut material_grid: Vec<Cube> = Vec::new();
+    let mut current_min = *initial_min_position; // Dereference to get the actual value
+    let mut current_max = *initial_max_position;
 
-    // Define vertical offset to raise each layer above the one below it
-    let layer_height_offset = Vec3::new(0.0, cube_length, 0.0); // Adjust if needed for Z-axis
+    let vertical_sum_vector = match mode {
+        1 => Vec3::new(cube_length, 0.0, 0.0), // For XY grid
+        2 => Vec3::new(cube_length, 0.0, 0.0), // For XZ grid
+        _ => Vec3::new(0.0, 0.0, 0.0),         // Base case
+    };
 
-    for layer in 0..=base_grid_size {
-        // Create the current layer using the grid function
-        let mut layer_cubes = create_grid(
-            &mut layer_min,
-            &mut layer_max,
-            cube_length,
-            2,                // Choose mode depending on your 3D layout
-            grid_size,
-            material.clone(),
-        );
+    let horizontal_sum_vector = match mode {
+        1 => Vec3::new(0.0, cube_length, 0.0), // For XY grid
+        2 => Vec3::new(0.0, 0.0, cube_length), // For XZ grid
+        _ => Vec3::new(0.0, 0.0, 0.0),         // Base case
+    };
 
-        // Add this layer's cubes to the pyramid vector
-        pyramid.append(&mut layer_cubes);
+    for i in 0..=grid_size {
+        for j in 0..=grid_size {
+            // Only add cubes if they are on the grid's boundaries
+            if i == 0 || j == 0 || i == grid_size || j == grid_size {
+                material_grid.push(Cube {
+                    min: current_min,
+                    max: current_max,
+                    material: material.clone(),
+                });
+            }
 
-        // Reduce grid size for the next layer
-        if grid_size > 0 {
-            grid_size -= 1;
+            current_max += vertical_sum_vector;
+            current_min += vertical_sum_vector;
         }
 
-        // Center next layer above by moving min and max positions inward
-        layer_min += Vec3::new(cube_length / 2.0, 0.0, cube_length / 2.0);
-        layer_max -= Vec3::new(cube_length / 2.0, 0.0, cube_length / 2.0);
-
-        // Raise the layer position for the next iteration
-        layer_min += layer_height_offset;
-        layer_max += layer_height_offset;
+        // Move to the next row or column in the grid
+        *initial_min_position -= horizontal_sum_vector;
+        *initial_max_position -= horizontal_sum_vector;
+        current_min = *initial_min_position;
+        current_max = *initial_max_position;
     }
 
-    pyramid
+    material_grid
 }
 
 
@@ -324,6 +332,9 @@ fn main() {
 
     let mut DIRT = Material::material_with_texture(Color::new(128,128,128), 2.0, [0.9, 0.1, 0.0, 0.0], Some(STONE.clone()), 1.0, Color::new(0,0,0), 0.0);
     let mut STONEP = Material::material_with_texture(Color::new(128,128,128), 2.0, [0.9, 0.1, 0.0, 0.0], Some(PYRAMID.clone()), 1.0, Color::new(0,0,0), 0.0);
+    let mut EMERALDM = Material::material_with_texture(Color::new(37, 150, 190), 7.0, [0.4, 0.6, 0.0, 0.0], Some(EMERALD.clone()), 1.0, Color::new(37, 150, 190), 5.0);
+    let mut WATER = Material::material_with_texture(Color::new(0, 0, 255), 2.0, [0.9, 0.1, 0.4, 0.5], Some(WATER_TEXTURE.clone()), 1.33, Color::new(0, 0, 0), 0.0);
+    let mut RUBY = Material::material_with_texture(Color::new(0, 0, 0), 7.0, [0.4, 0.6, 0.0, 0.0], Some(WATER_TEXTURE.clone()), 1.0, Color::new(255, 0, 0), 10.0);
     let frame_delay = Duration::from_millis(0);
     let mut is_day = true;
     let mut camera = Camera::new(
@@ -333,97 +344,71 @@ fn main() {
         false
     );
     
-    let mut test_world = create_grid(&mut Vec3::new(-0.5, -0.5, -0.5),
+    let mut test_world = create_empty_grid(&mut Vec3::new(-0.5, -0.5, -0.5),
     &mut Vec3::new(0.5, 0.5, 0.5),
-      1.0, 2, 15, DIRT);
+      1.0, 2, 10, DIRT.clone());
 
 
-    let test_world2 = create_grid(&mut Vec3::new(0.5, 0.5, -1.5),
+    let test_world2 = create_empty_grid(&mut Vec3::new(0.5, 0.5, -1.5),
 &mut Vec3::new(1.5, 1.5, -0.5), 1.0, 2, 8, STONEP.clone());
 
-    let test_world3 = create_grid(&mut Vec3::new(1.5, 1.5, -2.5),
+    let test_world3 = create_empty_grid(&mut Vec3::new(1.5, 1.5, -2.5),
     &mut Vec3::new(2.5, 2.5, -1.5), 1.0, 2, 6, STONEP.clone());
 
-    let test_world4 = create_grid(&mut Vec3::new(2.5, 2.5, -3.5),
+    let test_world4 = create_empty_grid(&mut Vec3::new(2.5, 2.5, -3.5),
     &mut Vec3::new(3.5, 3.5, -2.5), 1.0, 2, 4, STONEP.clone());
 
-    let test_world5 =create_grid(&mut Vec3::new(3.5, 3.5, -4.5),
-    &mut Vec3::new(4.5, 4.5, -3.5), 1.0, 2, 2, STONEP.clone());
-    
+    let test_world6 = create_empty_grid(&mut Vec3::new(10.5, -0.5, -0.5),
+    &mut Vec3::new(11.5, 0.5, 0.5), 1.0, 2, 10, STONEP.clone());
 
+    let test_world7 = create_grid(&mut Vec3::new(11.5, -0.5, -0.5),
+    &mut Vec3::new(12.5, 0.5, 0.5), 1.0, 2, 9, WATER.clone());
+
+    let test_world5 =create_empty_grid(&mut Vec3::new(3.5, 3.5, -4.5),
+    &mut Vec3::new(4.5, 4.5, -3.5), 1.0, 2, 2, STONEP.clone());
+
+    
+    let objects = vec![
+        Cube {
+            min: Vec3::new(4.5, 4.5, -4.5), 
+            max: Vec3::new(5.5, 5.5, -5.5),
+            material: EMERALDM.clone()},
+        Cube {
+                min: Vec3::new(10.5, 0.5, -0.5), 
+                max: Vec3::new(11.5, 1.5, 0.5),
+                material: RUBY.clone()},
+        Cube {
+            min: Vec3::new(10.5, 0.5, -9.5), 
+            max: Vec3::new(11.5, 1.5, -10.5),
+            material: RUBY.clone()},
+            Cube {
+                min: Vec3::new(20.5, 0.5, -0.5), 
+                max: Vec3::new(21.5, 1.5, 0.5),
+                material: RUBY.clone()},
+                Cube {
+                    min: Vec3::new(20.5, 0.5, -9.5), 
+                    max: Vec3::new(21.5, 1.5, -10.5),
+                    material: RUBY.clone()}
+
+    ];
     test_world.extend(test_world2);
     test_world.extend(test_world3);
     test_world.extend(test_world4);
     test_world.extend(test_world5);
-    let objects = vec![
-        Cube {
-            min: Vec3::new(-0.5, -0.5, -0.5), 
-            max: Vec3::new(0.5, 0.5, 0.5),
-            material: Material {
-                diffuse: Color::new(255, 0, 0),
-                specular: 50.0,
-                albedo: [0.9, 0.1, 0.0, 0.0],
-                texture: None,
-                refractive_index: 1.0,
-                emission: Color::new(255, 0, 0),
-                emission_strength: 2.0
-            },
-        },
+    test_world.extend(test_world6);
+    test_world.extend(test_world7);
+    test_world.extend(objects);
 
-        Cube {
-            min: Vec3::new(3.0, -0.5, -1.0), // Move the cube forward
-            max: Vec3::new(5.0, 0.0, 0.0),
-            material: Material {
-                diffuse: Color::new(0, 255, 0),
-                specular: 265.0,
-                albedo: [0.1, 0.9, 0.8, 0.5],
-                texture: None,
-                refractive_index: 1.0,
-                emission: Color::new(0, 0, 0),
-                emission_strength: 0.0
-            },
-            
-        },
-
-        Cube {
-            min: Vec3::new(6.0, -0.5, -1.0), 
-            max: Vec3::new(8.0, 0.5, 0.0),
-            material: Material {
-                diffuse: Color::new(255, 255, 0),
-                specular: 9.0,
-                albedo: [0.1, 0.9, 0.3, 0.4],
-                texture:None,
-                refractive_index: 1.0,
-                emission: Color::new(0, 0, 0),
-                emission_strength: 0.0
-            },
-            
-        },
-        Cube {
-
-            min: Vec3::new(3.0, 2.0, -5.0), // Move the cube forward
-            max: Vec3::new(5.0, 4.0, -3.0),
-            material: Material {
-                diffuse: Color::new(254, 138, 24),
-                specular: 265.0,
-                albedo: [0.1, 0.9, 0.4, 0.5],
-                texture: None,
-                refractive_index: 1.0,
-                emission: Color::new(0, 0, 0),
-                emission_strength: 0.0
-            },
-
-        }
-    ];
+    
 
     let mut framebuffer = FrameBuffer::new(framebuffer_width, framebuffer_height);
     framebuffer.set_background_color(Color::new(128,128,128));
 
     let rotation_speed = PI/60.0;
 
-    let lights = [
-        Light::new(Vec3::new(7.0, 5.0, 5.0), Color::new(255, 255, 255), 1.0),
-        Light::new(Vec3::new(7.0, 45.0, 6.0), Color::new(255, 255, 255), 1.0),
+    let mut lights = [
+        Light::new(Vec3::new(7.0, 5.0, 0.0), Color::new(255, 255, 255), 2.0),
+        Light::new(Vec3::new(7.0, 45.0, 6.0), Color::new(255, 255, 255), 2.0),
         //Light::new(Vec3::new(-3.0, 5.0, 5.0), Color::new(255, 255, 255), 10.0),
     ];
     render_parallel(&mut framebuffer, &test_world, &mut camera, &lights, is_day);
@@ -458,6 +443,22 @@ fn main() {
         }
         if window.is_key_down(Key::N){
             is_day = !is_day;
+            if is_day {
+                lights = [
+                    Light::new(Vec3::new(7.0, 5.0, 0.0), Color::new(255, 255, 255), 2.0),
+                    Light::new(Vec3::new(7.0, 45.0, 6.0), Color::new(255, 255, 255), 2.0),
+                    ];
+
+            }
+            else {
+                lights = [
+                Light::new(Vec3::new(7.0, 5.0, 0.0), Color::new(255, 255, 255), 1.0),
+                Light::new(Vec3::new(7.0, 45.0, 6.0), Color::new(255, 255, 255), 0.0),
+                //Light::new(Vec3::new(-3.0, 5.0, 5.0), Color::new(255, 255, 255), 10.0),
+            ];
+
+            }
+            
             camera.has_changed = true;
         }
 

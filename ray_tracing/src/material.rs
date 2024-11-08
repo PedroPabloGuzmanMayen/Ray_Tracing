@@ -10,7 +10,7 @@ pub struct Material {
   pub albedo: [f32;4],
   pub texture: Option<Arc<Texture>>,
   pub refractive_index: f32,
-  pub emission: Color,           // New: emission color
+  pub emission: Color,           // Materiales emisivos (15 puntos)
   pub emission_strength: f32
 }
 
@@ -20,7 +20,7 @@ impl Material {
     specular: f32,
     albedo: [f32; 4],
     refractive_index: f32,
-    emission: Color,           // New: emission color
+    emission: Color,           
     emission_strength: f32
   ) -> Self {
     Material {
