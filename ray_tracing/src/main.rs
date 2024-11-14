@@ -1,26 +1,44 @@
 mod framebuffer;
 mod color;
 mod texture;
-mod cube;
 mod rayintersect;
-use cube::Cube;
+mod sphere;
+mod material;
+use sphere::Sphere;
 use framebuffer::FrameBuffer;
-use rayintersect::RayIntersect;
+use rayintersect::{RayIntersect, Intersect};
 use minifb::{Window, WindowOptions, Key};
 use nalgebra_glm::{Vec2, Vec3};
 use std::time::Duration;
 use color::Color;
+use std::f32::consts::PI;
 
-pub fn cast_ray(ray_origin: &Vec3, ray_direction: &Vec3, objects: &[Cube]) -> Color {
+pub fn cast_ray(ray_origin: &Vec3, ray_direction: &Vec3, objects: &[Sphere]) -> Color {
+    let mut closest_intersect = Intersect::empty();
+    let mut zbuffer = f32::INFINITY;
+
     for object in objects {
-        if object.ray_intersect(ray_origin, ray_direction) {
-            return Color::new(0, 0, 255);
+        // Get the intersection result
+        let i = object.ray_intersect(ray_origin, ray_direction);
+
+        // Check if there was an intersection and if it's closer than the previous one
+        if i.is_intersecting && i.distance < zbuffer {
+            closest_intersect = i;
+            zbuffer = i.distance;
         }
     }
-    Color::new(0,0,0)
+
+    // If no intersection was found, return background color
+    if !closest_intersect.is_intersecting {
+        return Color::new(4, 12, 36); // Background color
+    }
+
+    // Return the color of the intersected object's material
+    closest_intersect.material.diffuse
 }
 
-pub fn render(framebuffer: &mut FrameBuffer, objects: &[Cube]) {
+
+pub fn render(framebuffer: &mut FrameBuffer, objects: &[Sphere]) {
     let width = framebuffer.width as f32;
     let height = framebuffer.height as f32;
     let aspect_ratio = width / height;
@@ -38,7 +56,7 @@ pub fn render(framebuffer: &mut FrameBuffer, objects: &[Cube]) {
             let ray_direction = &Vec3::new(screen_x, screen_y, -1.0).normalize();
 
             // Cast the ray and get the pixel color
-            let pixel_color = cast_ray(&Vec3::new(0.0, 0.0, 0.0), &ray_direction, objects);
+            let pixel_color = cast_ray(&Vec3::new(0.0, 0.0, 5.0), &ray_direction, objects);
 
             // Draw the pixel on screen with the returned color
             framebuffer.set_current_color(pixel_color);
@@ -47,15 +65,49 @@ pub fn render(framebuffer: &mut FrameBuffer, objects: &[Cube]) {
     }
 }
 fn main() {
-    let window_height = 600;
-    let window_width = 800;
+    let window_height = 1000;
+    let window_width = 1000;
 
-    let framebuffer_height = 600;
-    let framebuffer_width = 800;
+    let framebuffer_height = 1000;
+    let framebuffer_width = 1000;
 
     let frame_delay = Duration::from_millis(0);
 
-    let framebuffer = FrameBuffer::new(framebuffer_width, framebuffer_height);
+    let mut framebuffer = FrameBuffer::new(framebuffer_width, framebuffer_height);
+
+    let objects = [
+    Sphere {
+        center: Vec3::new(0.0, 0.0, -1.0), // Move this sphere back
+        radius: 4.0,
+        material: material::Material { diffuse: Color::new(111, 78, 55) }
+    },
+    Sphere {
+        center: Vec3::new(0.0, 0.0, 3.0), // Move this sphere back as well
+        radius: 0.5,
+        material: material::Material { diffuse: Color::new(255, 0, 0) }
+    },
+    Sphere {
+        center: Vec3::new(1.0, 0.5, 3.0), // Move this sphere back as well
+        radius: 0.25,
+        material: material::Material { diffuse: Color::new(0, 0, 0) }
+    },
+    Sphere {
+        center: Vec3::new(-1.0, 0.5, 3.0), // Move this sphere back as well
+        radius: 0.25,
+        material: material::Material { diffuse: Color::new(0, 0, 0) }
+    },
+    Sphere {
+        center: Vec3::new(-1.5, 1.5, 2.5), // Move this sphere back as well
+        radius: 0.50,
+        material: material::Material { diffuse: Color::new(111, 78, 55)  }
+    },
+    Sphere {
+        center: Vec3::new(1.5, 1.5, 2.5), // Move this sphere back as well
+        radius: 0.50,
+        material: material::Material { diffuse: Color::new(111, 78, 55)  }
+    },
+
+];
 
     let mut window = Window::new(
         "Minecraft RayTracer",
@@ -68,6 +120,8 @@ fn main() {
         if window.is_key_down(Key::Escape){
             break;
         }
+        framebuffer.clear();
+        render(&mut framebuffer, &objects);
 
         window
             .update_with_buffer(&framebuffer.cast_buffer(), framebuffer_width, framebuffer_height)
